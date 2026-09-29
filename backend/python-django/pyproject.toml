@@ -69,7 +69,7 @@ web = [
 
     # Cache
     "redis==6.2.0",
-    "django-redis==5.4.0",
+    "django-redis==7.0.0",
 
     # Server
     "gunicorn==23.0.0",
