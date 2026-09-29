@@ -1,0 +1,35 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Next.js build output
+.next
+out
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+# L12: 특정 파일만 나열하면 .env.production·.env.development(.local 없는 형태)가 빠져
+# 이미지 레이어에 시크릿이 베이킹될 수 있다. django·sttEdit와 동일하게 모든 .env*를
+# 배제하되 예시 파일만 예외로 둔다.
+.env*
+!.env.example
+
+# Build info
+tsconfig.tsbuildinfo
+
+# Documentation
+README.md
+THEME_DESIGN.md
+
+# Git
+.git
+.gitignore

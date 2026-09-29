@@ -1,0 +1,40 @@
+OpenNote V2
+Copyright (c) 2026 OpenNote Contributors
+
+이 저장소의 소스 코드는 MIT License(LICENSE 파일 참조)를 따릅니다.
+
+
+서드파티 상표에 관한 고지
+-------------------------------------------------------------------------------
+
+이 프로젝트는 소셜 로그인(OAuth 2.0)을 제공하기 위해 아래 서비스의 명칭과
+심볼을 표시합니다. 해당 명칭·심볼은 각 상표권자의 재산이며, MIT License
+적용 대상이 **아닙니다**. 표시는 "해당 서비스 계정으로 로그인한다"는 사실을
+알리기 위한 지시적 사용에 한정됩니다.
+
+심볼은 별도 이미지 파일이 아니라
+`frontend/src/components/icons/SocialProviderIcon.tsx`에 인라인 SVG로
+포함되어 있으며, 색상·형태는 각 브랜드 가이드라인의 지정 규격을 따릅니다.
+
+  - Google — Google LLC
+    https://developers.google.com/identity/branding-guidelines
+    규격: 4색 그래디언트 고정(#4285F4 / #34A853 / #FBBC05 / #EA4335),
+          색상·비율 변경 및 흑백 사용 금지
+
+  - GitHub — GitHub, Inc.
+    https://brand.github.com/foundations/logo
+    규격: Invertocat은 흰색 또는 검정만 사용, 효과 추가·왜곡 금지
+
+  - NAVER — NAVER Corp.
+    https://developers.naver.com/docs/login/bi/bi.md
+    규격: 녹색(#03C75A) 컨테이너 + 흰색 심볼
+
+  - Kakao — Kakao Corp.
+    https://developers.kakao.com/docs/ko/kakaologin/design-guide
+    규격: 노란색(#FEE500) 컨테이너 + 검정 심볼
+
+이 저장소를 포크하거나 재배포하는 경우, 위 심볼의 사용은 각 상표권자의
+가이드라인을 직접 확인하고 준수할 책임이 사용자에게 있습니다. 사용하지 않는
+프로바이더의 심볼은 제거해도 무방합니다.
+
+프로젝트 관리자는 위 상표권자와 제휴·보증·후원 관계가 없습니다.

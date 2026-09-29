@@ -1,0 +1,51 @@
+{% extends "emails/_base.html" %}
+
+{% block title %}OpenNote 이메일 변경 확인{% endblock %}
+
+{% block heading %}이메일 변경 확인{% endblock %}
+
+{% block content %}
+<p style="margin: 0 0 20px 0;">안녕하세요, <strong>{{ user_name }}</strong>님!</p>
+
+<p style="margin: 0 0 30px 0;">아래 버튼을 클릭하면 계정 이메일이 <strong>{{ new_email }}</strong>(으)로 변경됩니다.</p>
+{% endblock %}
+
+{% block button %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
+    <tr>
+        <td align="center">
+            <table cellpadding="0" cellspacing="0">
+                <tr>
+                    <td align="center" style="background-color: #2691d9; border-radius: 5px;">
+                        <a href="{{ action_url }}" style="display: inline-block; padding: 12px 24px; color: white; text-decoration: none; font-weight: bold;">이메일 변경 확인</a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+{% endblock %}
+
+{% block warning %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+    <tr>
+        <td style="background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px;">
+            <strong>&#9888;&#65039; 중요:</strong> 이 링크는 24시간 후에 만료됩니다. 요청하지 않으셨다면 이 메일을 무시하셔도 됩니다.
+        </td>
+    </tr>
+</table>
+{% endblock %}
+
+{% block additional_content %}
+<p style="margin: 20px 0;">버튼이 작동하지 않는 경우, 아래 링크를 복사하여 브라우저에 붙여넣으세요:</p>
+{% endblock %}
+
+{% block fallback_link %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+    <tr>
+        <td style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; word-break: break-all;">
+            <a href="{{ action_url }}" style="color: #2691d9;">{{ action_url }}</a>
+        </td>
+    </tr>
+</table>
+{% endblock %}

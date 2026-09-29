@@ -1,0 +1,53 @@
+name: security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # 시크릿 유출 스캔 — 차단 게이트. 전체 히스토리를 봐야 하므로 fetch-depth: 0
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # PR 이벤트에서 커밋 목록 조회에 필요 — 없으면 "Resource not accessible by integration"
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 의존성 취약점 스캔 — 현재는 보고용(non-blocking).
+  # next 14.2.x 잔여 취약점은 백포트가 없어(major 이관 별도 과제) 게이트로 걸면
+  # 항상 실패한다. Next major 이관 후 continue-on-error를 제거해 게이트로 전환할 것.
+  trivy-vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          # 보고용이라 exit-code 0 — 결과는 잡 로그에서 확인.
+          # Next major 이관 후 '1'로 바꿔 차단 게이트로 전환할 것.
+          exit-code: '0'
+          ignore-unfixed: true
+
+  # Dockerfile·compose 설정 오류 스캔 — 차단 게이트
+  trivy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          severity: CRITICAL,HIGH
+          exit-code: '1'

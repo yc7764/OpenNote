@@ -1,0 +1,174 @@
+# docker-compose.dev.yml
+# 로컬 개발용 Compose 파일
+#
+# 사용법:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down
+#
+# 마이그레이션:
+#   docker compose -f docker-compose.dev.yml exec backend uv run python manage.py migrate
+#
+# 관리자 계정 생성:
+#   docker compose -f docker-compose.dev.yml exec backend uv run python manage.py createsuperuser
+#
+# 참고:
+#   - 발행 포트는 127.0.0.1에만 바인딩한다(호스트 로컬 전용). 서비스 간 통신은
+#     compose 네트워크의 서비스명(postgres/redis/rabbitmq)으로 이뤄지므로 영향 없다.
+#   - 로그는 json-file 드라이버에 크기·개수 제한을 걸어 무제한 누적을 막는다.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # =============================================================================
+  # PostgreSQL - 공통 데이터베이스 (Django + sttEdit 공유)
+  # =============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: opennote-dev-postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: opennote
+      POSTGRES_PASSWORD: opennote_dev
+      POSTGRES_DB: opennote
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opennote -d opennote"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    restart: unless-stopped
+  # =============================================================================
+  # Redis - Standalone (Django 캐시 + sttEdit Pub/Sub)
+  # =============================================================================
+  # 무인증이지만 127.0.0.1 바인딩이라 외부 노출 없음(루프백 바인딩으로
+  # 실효 노출 해소. 운영 Redis는 requirepass 적용).
+  redis:
+    image: redis:7.2-alpine
+    container_name: opennote-dev-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    restart: unless-stopped
+
+  # =============================================================================
+  # Backend - Django REST API Server
+  # =============================================================================
+  backend:
+    build:
+      context: ./backend/python-django
+      dockerfile: Dockerfile
+    container_name: opennote-dev-backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DB_HOST: postgres
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      USE_S3: "False"
+    volumes:
+      - backend_media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    logging: *default-logging
+    restart: unless-stopped
+
+  # =============================================================================
+  # sttEdit - NestJS WebSocket Server
+  # =============================================================================
+  sttedit:
+    build:
+      context: ./backend/sttEdit
+      dockerfile: Dockerfile
+    container_name: opennote-dev-sttedit
+    ports:
+      - "127.0.0.1:21123:21123"
+    environment:
+      NODE_ENV: development
+      PORT: "21123"
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: opennote
+      POSTGRES_PASSWORD: opennote_dev
+      POSTGRES_DATABASE: opennote
+      # Redis
+      REDIS_MODE: STANDALONE
+      REDIS_HOST: redis:6379
+      # Auth
+      JWT_SECRET: local-dev-only-not-for-production
+      # CORS
+      ALLOWED_ORIGINS: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+    restart: unless-stopped
+
+  # =============================================================================
+  # Frontend - Next.js Application
+  # (프로덕션 빌드 이미지, hot reload 불필요 시 사용)
+  # hot reload가 필요하면 호스트에서 직접 npm run dev 실행
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: opennote-dev-frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_STT_EDIT_MODULE_URL: http://localhost:21123
+      # Server-only (non-NEXT_PUBLIC_) var for middleware CSP — readable at runtime
+      API_ORIGIN: http://localhost:8000
+      # 미들웨어 CSP connect-src용 — sttEdit이 별도 오리진일 때 소켓(ws)을 허용
+      STT_EDIT_ORIGIN: http://localhost:21123
+    depends_on:
+      - backend
+      - sttedit
+    logging: *default-logging
+    restart: unless-stopped
+
+  # =============================================================================
+  # RabbitMQ - Celery 브로커 (Django STT 비동기 처리)
+  # =============================================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: opennote-dev-rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"    # AMQP
+      - "127.0.0.1:15672:15672"  # Management UI (http://localhost:15672, guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    logging: *default-logging
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
+  backend_media:

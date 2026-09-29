@@ -1,0 +1,55 @@
+{% extends "emails/_base.html" %}
+
+{% block title %}OpenNote 이메일 인증{% endblock %}
+
+{% block heading %}이메일 인증 요청{% endblock %}
+
+{% block content %}
+<p style="margin: 0 0 20px 0;">안녕하세요, <strong>{{ user_name }}</strong>님!</p>
+
+<p style="margin: 0 0 15px 0;">{{ provider }} 계정으로 OpenNote에 가입하신 것을 환영합니다!</p>
+
+<p style="margin: 0 0 30px 0;">계정 보안과 복구를 위해 입력하신 이메일 주소(<strong>{{ email }}</strong>)를 인증해주세요:</p>
+{% endblock %}
+
+{% block button %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
+    <tr>
+        <td align="center">
+            <table cellpadding="0" cellspacing="0">
+                <tr>
+                    <td align="center" style="background-color: #2691d9; border-radius: 5px;">
+                        <a href="{{ action_url }}" style="display: inline-block; padding: 12px 24px; color: white; text-decoration: none; font-weight: bold;">이메일 인증하기</a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+{% endblock %}
+
+{% block warning %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+    <tr>
+        <td style="background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px;">
+            <strong>&#9888;&#65039; 중요:</strong> 이 링크는 1시간 후에 만료됩니다. 만료되면 다시 소셜 로그인을 시도해주세요.
+        </td>
+    </tr>
+</table>
+{% endblock %}
+
+{% block additional_content %}
+<p style="margin: 20px 0;">만약 이 요청을 하지 않으셨다면, 이 이메일을 무시하셔도 됩니다.</p>
+
+<p style="margin: 20px 0;">버튼이 작동하지 않는 경우, 아래 링크를 복사하여 브라우저에 붙여넣으세요:</p>
+{% endblock %}
+
+{% block fallback_link %}
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+    <tr>
+        <td style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; word-break: break-all;">
+            <a href="{{ action_url }}" style="color: #2691d9;">{{ action_url }}</a>
+        </td>
+    </tr>
+</table>
+{% endblock %}

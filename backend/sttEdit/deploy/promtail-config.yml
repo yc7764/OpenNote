@@ -1,0 +1,128 @@
+server:
+  http_listen_port: 9081
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions-sttedit.yaml
+
+clients:
+  # Loki 서버 URL (환경변수로 설정)
+  - url: ${LOKI_URL:-http://localhost:3100}/loki/api/v1/push
+    # 인증이 필요한 경우
+    # basic_auth:
+    #   username: ${LOKI_USERNAME}
+    #   password: ${LOKI_PASSWORD}
+    tenant_id: ${LOKI_TENANT_ID:-opennote}
+
+scrape_configs:
+  # sttEdit 전체 로그
+  - job_name: sttedit
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: sttedit
+          app: opennote
+          service: sttedit
+          env: ${ENVIRONMENT:-development}
+          # winston 일별 로테이션은 app.log.YYYY-MM-DD 형식으로만 파일을 생성한다.
+          # ????-??-?? 로 날짜 부분만 매칭해 .gz 압축본의 재수집을 막는다.
+          __path__: /var/log/sttedit/app.log.????-??-??
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            context: context
+            name: name
+            message: message
+            timestamp: timestamp
+      - labels:
+          level:
+          context:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+  # sttEdit 에러 로그
+  - job_name: sttedit-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: sttedit-error
+          app: opennote
+          service: sttedit
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/sttedit/error.log.????-??-??
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            context: context
+            name: name
+            message: message
+            stack: stack
+            timestamp: timestamp
+      - labels:
+          level:
+          context:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+  # sttEdit Content Sync 스케줄러 로그
+  - job_name: sttedit-content-sync
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: sttedit-content-sync
+          app: opennote
+          service: sttedit
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/sttedit/content-sync.log.????-??-??
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            context: context
+            message: message
+            timestamp: timestamp
+      - labels:
+          level:
+          context:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+  # sttEdit 보안 로그
+  - job_name: sttedit-security
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: sttedit-security
+          app: opennote
+          service: sttedit
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/sttedit/security.log.????-??-??
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            context: context
+            event: event
+            message: message
+            ip: ip
+            userId: userId
+            noteId: noteId
+            reason: reason
+            timestamp: timestamp
+      - labels:
+          level:
+          context:
+          event:
+          reason:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano

@@ -1,0 +1,335 @@
+# celery_workers/Dockerfile.stt
+# STT Worker - CPU/GPU 통합 이미지 (Legacy + Blackwell 자동 분기)
+#
+# CUDA 버전에 따라 자동 분기:
+#   - CUDA 12.8+  → Blackwell 모드 (RTX 50 시리즈, sm_120, Python 3.12)
+#   - CUDA ≤12.4  → Legacy 모드 (RTX 40/30/20 시리즈, Python 3.10)
+#
+# 빌드 인자:
+#   DEVICE_TYPE: cpu 또는 gpu (기본값: gpu)
+#   CUDA_VERSION: 11.8, 12.1, 12.4, 12.8, 12.9 (기본값: 12.8)
+#   PYTORCH_VERSION: PyTorch 버전 (Legacy 모드에서만 사용, 기본값: 2.5.1)
+#
+# 사용 예시:
+#   RTX 5070 Ti:  docker build --build-arg CUDA_VERSION=12.8 -f Dockerfile.stt -t stt-worker ..
+#   RTX 4090:     docker build --build-arg CUDA_VERSION=12.4 -f Dockerfile.stt -t stt-worker ..
+#   RTX 3090:     docker build --build-arg CUDA_VERSION=11.8 -f Dockerfile.stt -t stt-worker ..
+#   CPU:          docker build --build-arg DEVICE_TYPE=cpu -f Dockerfile.stt -t stt-worker ..
+
+# ==================== Build Arguments ====================
+ARG DEVICE_TYPE=gpu
+ARG CUDA_VERSION=12.8
+ARG PYTORCH_VERSION=2.5.1
+
+# ==================== Base Image Selection ====================
+# Blackwell (CUDA 12.8+): devel 이미지 필요 (sm_120 컴파일)
+# Legacy (CUDA ≤12.4): runtime 이미지 충분
+# CPU: Ubuntu 22.04
+
+FROM nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04 AS base-gpu-12.9
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu24.04 AS base-gpu-12.8
+FROM nvidia/cuda:12.4.0-cudnn8-runtime-ubuntu22.04 AS base-gpu-12.4
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04 AS base-gpu-12.1
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base-gpu-11.8
+FROM ubuntu:22.04 AS base-cpu
+
+# 조건부 베이스 이미지 선택
+FROM base-${DEVICE_TYPE}-${CUDA_VERSION} AS base-gpu
+FROM base-cpu AS base-cpu-final
+
+# DEVICE_TYPE에 따라 최종 베이스 결정
+FROM base-${DEVICE_TYPE} AS base
+
+WORKDIR /app
+
+# ==================== Build Arguments (재선언 필요) ====================
+ARG DEVICE_TYPE
+ARG CUDA_VERSION
+ARG PYTORCH_VERSION
+ARG DEBIAN_FRONTEND=noninteractive
+
+# 빌드 정보 저장 (런타임에서 확인용)
+ENV BUILD_DEVICE_TYPE=${DEVICE_TYPE}
+ENV BUILD_CUDA_VERSION=${CUDA_VERSION}
+ENV BUILD_PYTORCH_VERSION=${PYTORCH_VERSION}
+
+# ==================== System Packages ====================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    ffmpeg \
+    tzdata \
+    # PyAV 빌드 의존성
+    build-essential \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libavfilter-dev \
+ && ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime \
+ && echo "Asia/Seoul" > /etc/timezone \
+ && dpkg-reconfigure -f noninteractive tzdata \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==================== uv + Python Setup ====================
+# uv 설치 — 핀 고정된 공식 이미지에서 바이너리 복사(체크섬 검증된 재현 빌드).
+# 이전엔 `curl ... install.sh | sh`라 스크립트 무결성 검증 없이 root 임의 코드 실행 경로였다.
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /usr/local/bin/
+
+# uv가 설치하는 Python을 공용 경로에 둔다 — 기본값(/root/.local)은 비-root
+# 사용자가 접근할 수 없어 venv 인터프리터 로드가 실패한다(No module named 'encodings').
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+
+# Python 버전: Blackwell(12.8+) → 3.12, Legacy/CPU → 3.10
+ARG CUDA_VERSION
+ARG DEVICE_TYPE
+RUN if [ "$DEVICE_TYPE" = "cpu" ]; then \
+        echo "CPU mode: Installing Python 3.10" && \
+        uv python install 3.10 && uv venv --python 3.10; \
+    else \
+        CUDA_MAJOR=$(echo ${CUDA_VERSION} | cut -d. -f1) && \
+        CUDA_MINOR=$(echo ${CUDA_VERSION} | cut -d. -f2) && \
+        if [ "$CUDA_MAJOR" -gt 12 ] || ([ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 8 ]); then \
+            echo "Blackwell mode (CUDA ${CUDA_VERSION}): Installing Python 3.12" && \
+            uv python install 3.12 && uv venv --python 3.12; \
+        else \
+            echo "Legacy mode (CUDA ${CUDA_VERSION}): Installing Python 3.10" && \
+            uv python install 3.10 && uv venv --python 3.10; \
+        fi; \
+    fi
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# ==================== PyTorch Installation ====================
+# Blackwell (CUDA 12.8+): stable cu128 시도 → 실패시 nightly
+# Legacy (CUDA ≤12.4): stable 특정 버전
+# CPU: stable CPU 버전
+ARG DEVICE_TYPE
+ARG CUDA_VERSION
+ARG PYTORCH_VERSION
+# Blackwell(cu128) 경로 고정 버전 — 운영 STT 워커 실측값(재현 빌드).
+# 다른 GPU/CUDA로 빌드할 땐 --build-arg로 덮어쓴다.
+ARG BLACKWELL_TORCH=2.11.0
+ARG BLACKWELL_TORCHVISION=0.26.0
+ARG BLACKWELL_TORCHAUDIO=2.11.0
+ARG BLACKWELL_TORCHCODEC=0.11.1
+
+RUN if [ "$DEVICE_TYPE" = "gpu" ]; then \
+        CUDA_MAJOR=$(echo ${CUDA_VERSION} | cut -d. -f1) && \
+        CUDA_MINOR=$(echo ${CUDA_VERSION} | cut -d. -f2) && \
+        \
+        # === Blackwell 모드 (CUDA 12.8+) === \
+        if [ "$CUDA_MAJOR" -gt 12 ] || ([ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 8 ]); then \
+            case "$CUDA_VERSION" in \
+                12.8) CUDA_INDEX="cu128" ;; \
+                12.9) CUDA_INDEX="cu129" ;; \
+                *) CUDA_INDEX="cu128" ;; \
+            esac && \
+            echo "" && \
+            echo "========================================" && \
+            echo "  BLACKWELL MODE (sm_120)" && \
+            echo "  CUDA: ${CUDA_VERSION} (${CUDA_INDEX})" && \
+            echo "  torch ${BLACKWELL_TORCH} / vision ${BLACKWELL_TORCHVISION} / audio ${BLACKWELL_TORCHAUDIO}" && \
+            echo "========================================" && \
+            echo "" && \
+            # 버전을 고정해 재현 가능한 빌드로 설치한다. nightly 폴백은 제거 —
+            # 폴백은 같은 커밋을 날마다 다른 바이너리로 만들었고(비재현),
+            # 과거 cu130 오설치로 STT 전면 실패한 사고의 원인이기도 했다.
+            # 지정 버전이 인덱스에 없으면 조용히 다른 걸 깔지 말고 빌드를 실패시킨다.
+            uv pip install \
+                torch==${BLACKWELL_TORCH} \
+                torchvision==${BLACKWELL_TORCHVISION} \
+                torchaudio==${BLACKWELL_TORCHAUDIO} \
+                --index-url https://download.pytorch.org/whl/${CUDA_INDEX}; \
+        \
+        # === Legacy 모드 (CUDA ≤12.4) === \
+        else \
+            case "$CUDA_VERSION" in \
+                11.8) CUDA_INDEX="cu118" ;; \
+                12.1) CUDA_INDEX="cu121" ;; \
+                12.4) CUDA_INDEX="cu124" ;; \
+                *) CUDA_INDEX="cu118" ;; \
+            esac && \
+            echo "" && \
+            echo "========================================" && \
+            echo "  LEGACY MODE" && \
+            echo "  PyTorch: ${PYTORCH_VERSION}" && \
+            echo "  CUDA: ${CUDA_VERSION} (${CUDA_INDEX})" && \
+            echo "========================================" && \
+            echo "" && \
+            uv pip install \
+                torch==${PYTORCH_VERSION} \
+                torchvision \
+                torchaudio \
+                --index-url https://download.pytorch.org/whl/${CUDA_INDEX}; \
+        fi; \
+    \
+    # === CPU 모드 === \
+    else \
+        echo "" && \
+        echo "========================================" && \
+        echo "  CPU MODE" && \
+        echo "  PyTorch: ${PYTORCH_VERSION}" && \
+        echo "========================================" && \
+        echo "" && \
+        uv pip install \
+            torch==${PYTORCH_VERSION} \
+            torchvision \
+            torchaudio \
+            --index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# PyTorch 설치 확인
+RUN python -c "import torch; \
+    print(f'PyTorch: {torch.__version__}'); \
+    print(f'CUDA Available: {torch.cuda.is_available()}'); \
+    print(f'CUDA Build: {torch.version.cuda if hasattr(torch.version, \"cuda\") else \"N/A\"}')"
+
+# ==================== Dependencies ====================
+# 의존성은 backend/python-django/pyproject.toml 한 곳에서 관리한다.
+# 컴포넌트별 패키지는 optional-dependencies의 extra로 분리돼 있어
+# 공통 패키지 버전이 컴포넌트 간에 갈릴 수 없다.
+COPY pyproject.toml uv.lock ./
+# --frozen: uv.lock 그대로 설치, 재해석 없음 (재현 가능한 빌드)
+RUN uv sync --frozen --no-install-project --extra stt
+
+# ==================== PyTorch 재설치 및 검증 ====================
+# uv sync는 pyannote.audio·faster-whisper의 의존성으로 torch를 재해결하면서
+# 앞서 CUDA 인덱스에서 설치한 빌드를 PyPI 기본판으로 덮어쓴다.
+# 실제로 이 때문에 cu130 빌드가 들어가 드라이버(CUDA 12.9)에서
+# "NVIDIA driver is too old"로 STT가 전면 실패했다 (2026-07-31).
+# 따라서 sync 이후에 CUDA_VERSION에 맞는 빌드로 다시 고정한다.
+RUN if [ "$DEVICE_TYPE" = "gpu" ]; then \
+        CUDA_MAJOR=$(echo ${CUDA_VERSION} | cut -d. -f1) && \
+        CUDA_MINOR=$(echo ${CUDA_VERSION} | cut -d. -f2) && \
+        if [ "$CUDA_MAJOR" -gt 12 ] || ([ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 8 ]); then \
+            case "$CUDA_VERSION" in \
+                12.8) CUDA_INDEX="cu128" ;; \
+                12.9) CUDA_INDEX="cu129" ;; \
+                *)    CUDA_INDEX="cu128" ;; \
+            esac && \
+            # Blackwell(cu128) 경로는 실측값으로 버전 고정(재현 빌드). uv sync가 재해결한
+            # 뒤 이 reinstall이 최종 버전을 정하므로, 여기서 버전을 박아야 결정론적이다.
+            TORCH_SPEC="torch==${BLACKWELL_TORCH} torchvision==${BLACKWELL_TORCHVISION} torchaudio==${BLACKWELL_TORCHAUDIO} torchcodec==${BLACKWELL_TORCHCODEC}"; \
+        else \
+            case "$CUDA_VERSION" in \
+                11.8) CUDA_INDEX="cu118" ;; \
+                12.1) CUDA_INDEX="cu121" ;; \
+                12.4) CUDA_INDEX="cu124" ;; \
+                *)    CUDA_INDEX="cu124" ;; \
+            esac && \
+            # legacy GPU는 하드웨어별 검증이 필요해 버전 미고정 유지(빌드 시 --build-arg로 조정)
+            TORCH_SPEC="torch torchvision torchaudio torchcodec"; \
+        fi && \
+        echo "→ uv sync 이후 torch 계열을 ${CUDA_INDEX}로 재고정: ${TORCH_SPEC}" && \
+        # torchcodec은 pyannote.audio가 요구하는데 uv sync가 CUDA 13 빌드를 설치한다.
+        # 빠뜨리면 런타임에 libnvrtc.so.13을 찾다가 실패한다.
+        uv pip install --reinstall \
+            ${TORCH_SPEC} \
+            --index-url https://download.pytorch.org/whl/${CUDA_INDEX}; \
+    fi
+# 참고: CUDA 13용 nvidia-* 패키지가 함께 남지만 제거하지 않는다.
+# --reinstall이 torch가 요구하는 cu12 라이브러리를 정확히 가져오므로 동작에 지장이 없고,
+# 일괄 삭제를 시도했다가 torch가 필요로 하는 nvidia-cusparselt-cu12까지 지워
+# libcusparseLt.so.0 로드 실패로 빌드가 깨진 적이 있다.
+
+# 빌드 시점 검증 — torch의 CUDA가 드라이버 지원 범위를 넘으면 빌드를 실패시킨다.
+# 이 검증이 없어 깨진 이미지가 배포됐고 런타임에야 드러났다.
+RUN if [ "$DEVICE_TYPE" = "gpu" ]; then \
+        python -c "\
+import sys, torch;\
+built = torch.version.cuda;\
+allowed = '${CUDA_VERSION}';\
+b = tuple(int(x) for x in built.split('.')[:2]);\
+a = tuple(int(x) for x in allowed.split('.')[:2]);\
+sys.exit('BUILD FAILED: torch is built for CUDA %s but the driver supports up to %s' % (built, allowed)) if b > a else print('OK: torch CUDA %s <= driver %s' % (built, allowed))\
+" && \
+        python -c "\
+import torchcodec, sys;\
+print('OK: torchcodec %s loaded' % torchcodec.__version__)\
+"; \
+    fi
+
+# ==================== Application Code ====================
+COPY . .
+RUN mkdir -p /app/logs
+
+# ==================== GPU Verification Script ====================
+RUN echo '#!/bin/bash\n\
+echo "=== STT Worker GPU Verification ==="\n\
+echo "Build Info: DEVICE=${BUILD_DEVICE_TYPE}, CUDA=${BUILD_CUDA_VERSION}"\n\
+echo ""\n\
+python -c "\n\
+import torch\n\
+print(f\"PyTorch Version: {torch.__version__}\")\n\
+print(f\"CUDA Available: {torch.cuda.is_available()}\")\n\
+if torch.cuda.is_available():\n\
+    print(f\"GPU Name: {torch.cuda.get_device_name(0)}\")\n\
+    cap = torch.cuda.get_device_capability(0)\n\
+    print(f\"Compute Capability: sm_{cap[0]}{cap[1]}\")\n\
+    print(f\"CUDA Version: {torch.version.cuda}\")\n\
+    x = torch.randn(100, 100, device=\"cuda\")\n\
+    y = torch.matmul(x, x)\n\
+    print(\"GPU Tensor Test: PASSED\")\n\
+else:\n\
+    print(\"Running in CPU mode\")\n\
+"\n\
+echo ""\n\
+echo "=== CTranslate2 (faster-whisper) ==="\n\
+python -c "\n\
+import ctranslate2\n\
+print(f\"CTranslate2: {ctranslate2.__version__}\")\n\
+print(f\"CUDA Devices: {ctranslate2.get_cuda_device_count()}\")\n\
+"\n\
+echo ""\n\
+echo "=== pyannote.audio ==="\n\
+python -c \"from pyannote.audio import Pipeline; print(\\\"pyannote.audio: OK\\\")\"\n\
+echo ""\n\
+echo "=== Verification Complete ===" \n\
+' > /app/verify_gpu.sh && chmod +x /app/verify_gpu.sh
+
+# ==================== Environment Variables ====================
+ENV PYTHONUNBUFFERED=1
+ENV DJANGO_SETTINGS_MODULE=config.settings.worker
+ENV WORKER_TYPE=stt_worker
+ENV PATH="/app/.venv/bin:${PATH}"
+# 모델 캐시를 /app 하위로 옮긴다 — 비-root 사용자가 /root/.cache에 쓸 수 없기 때문.
+# compose의 stt-model-cache 볼륨도 이 경로로 마운트한다(기존 모델 보존).
+ENV HF_HOME=/app/.cache/huggingface
+
+# PyTorch 번들 cuDNN을 우선 사용 (시스템 cuDNN 버전 불일치 방지)
+# - PyTorch 2.8+ cu129는 cuDNN 9.10.2 필요
+# - CUDA 12.9 devel 이미지는 cuDNN 9.9.0 포함
+# - nvidia-cudnn 패키지의 cuDNN이 우선 로드되도록 설정
+ENV LD_LIBRARY_PATH="/app/.venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cufft/lib:/app/.venv/lib/python3.12/site-packages/nvidia/curand/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cusolver/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cusparse/lib:/app/.venv/lib/python3.12/site-packages/nvidia/nccl/lib:/app/.venv/lib/python3.12/site-packages/nvidia/nvtx/lib:${LD_LIBRARY_PATH}"
+
+# GPU 모드에서만 CUDA_VISIBLE_DEVICES 설정
+ENV CUDA_VISIBLE_DEVICES=${DEVICE_TYPE:+0}
+ENV WHISPER_DEVICE=${DEVICE_TYPE}
+
+# ==================== 비-root 사용자 ====================
+# 호스트 logs/ 바인드마운트 소유자(uid 1000)와 맞춰 uid 1000 고정.
+# 모델 캐시 디렉터리도 미리 만들어 소유권을 넘긴다(볼륨 마운트 대상).
+# Ubuntu 24.04 기반 CUDA 이미지는 기본 'ubuntu' 사용자가 uid/gid 1000을
+# 점유하므로 먼저 제거한 뒤 appuser를 1000으로 만든다(호스트 logs 소유자와 일치).
+RUN mkdir -p /app/.cache/huggingface \
+ && (userdel -r ubuntu 2>/dev/null || true) \
+ && (groupdel ubuntu 2>/dev/null || true) \
+ && groupadd -g 1000 appuser \
+ && useradd -u 1000 -g 1000 -m -s /bin/bash appuser \
+ && chown -R appuser:appuser /app /opt/uv-python
+USER appuser
+
+# ==================== Health Check ====================
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+  CMD celery -A celery_workers.stt_worker inspect ping \
+      -d stt_worker@$HOSTNAME || exit 1
+
+# ==================== Default Command ====================
+CMD ["celery", "-A", "celery_workers.stt_worker", "worker", \
+     "-Q", "stt_queue", "-c", "1", "--loglevel=info", \
+     "--hostname=stt_worker@%h"]

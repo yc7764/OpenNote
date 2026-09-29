@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Disable browser's default pull-to-refresh on mobile */
+html, body {
+  overscroll-behavior-y: none;
+}
+
+@layer utilities {
+  /* 모바일: 최소 터치 타겟 크기 (WCAG 2.5.5: 44x44px) */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Safe area padding utilities for notched devices */
+  .pb-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Hide scrollbar while keeping scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+}
+
+/* Plyr CSS - 인라인으로 포함 */
+@import 'plyr/dist/plyr.css';
+
+/* Tippy.js CSS - 인라인으로 포함 */
+@import 'tippy.js/dist/tippy.css';
+
+@layer components {
+  .segment-text:hover {
+    cursor: pointer;
+  }
+}
+
+/* Plyr.js Audio Player - Light Mode */
+.plyr-container {
+  --plyr-color-main: #7c3aed;
+  --plyr-audio-controls-background: #ffffff;
+  --plyr-audio-control-color: #374151;
+}
+
+.plyr-container .plyr--audio .plyr__controls {
+  padding: 12px 20px;
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+}
+
+.plyr-container .plyr--audio .plyr__control {
+  color: #374151;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+/* SVG 아이콘 색상 명시적 설정 - Light Mode */
+.plyr-container .plyr--audio .plyr__control svg {
+  fill: currentColor;
+  color: #374151;
+}
+
+.plyr-container .plyr--audio .plyr__control:hover {
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.plyr-container .plyr--audio .plyr__control:hover svg {
+  color: #111827;
+}
+
+.plyr-container .plyr__control--overlaid,
+.plyr-container .plyr__control[data-plyr="play"] {
+  background: #7c3aed;
+  color: white;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+
+.plyr-container .plyr__control[data-plyr="play"] svg {
+  fill: currentColor;
+  color: white;
+}
+
+.plyr-container .plyr__control[data-plyr="play"]:hover {
+  background: #6d28d9;
+  color: white;
+  transform: scale(1.05);
+}
+
+.plyr-container .plyr__progress {
+  background: transparent;
+}
+
+.plyr-container .plyr__progress__buffer {
+  background: transparent;
+}
+
+.plyr-container .plyr__time {
+  color: #374151;
+}
+
+.plyr-container .plyr__menu__container {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.plyr-container .plyr__menu__container .plyr__control {
+  color: #374151;
+}
+
+.plyr-container .plyr__menu__container .plyr__control svg {
+  fill: currentColor;
+  color: #374151;
+}
+
+.plyr-container .plyr__menu__container .plyr__control:hover {
+  background: #f3f4f6;
+}
+
+/* Plyr.js Audio Player - Dark Mode */
+.dark .plyr-container {
+  --plyr-color-main: #a78bfa;
+  --plyr-audio-controls-background: #262626;
+  --plyr-audio-control-color: #e5e5e5;
+}
+
+.dark .plyr-container .plyr--audio .plyr__controls {
+  background: #262626;
+  border-top-color: #404040;
+}
+
+.dark .plyr-container .plyr--audio .plyr__control {
+  color: #e5e5e5;
+}
+
+/* SVG 아이콘 색상 명시적 설정 - Dark Mode */
+.dark .plyr-container .plyr--audio .plyr__control svg {
+  fill: currentColor;
+  color: #e5e5e5;
+}
+
+.dark .plyr-container .plyr--audio .plyr__control:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .plyr-container .plyr--audio .plyr__control:hover svg {
+  color: #ffffff;
+}
+
+.dark .plyr-container .plyr__control--overlaid,
+.dark .plyr-container .plyr__control[data-plyr="play"] {
+  background: #8b5cf6;
+  color: white;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+
+.dark .plyr-container .plyr__control[data-plyr="play"] svg {
+  fill: currentColor;
+  color: white;
+}
+
+.dark .plyr-container .plyr__control[data-plyr="play"]:hover {
+  background: #a78bfa;
+}
+
+.dark .plyr-container .plyr__progress {
+  background: transparent;
+}
+
+.dark .plyr-container .plyr__progress__buffer {
+  background: transparent;
+}
+
+.dark .plyr-container .plyr__time {
+  color: #e5e5e5;
+}
+
+.dark .plyr-container .plyr__menu__container {
+  background: #262626;
+  border-color: #404040;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.dark .plyr-container .plyr__menu__container .plyr__control {
+  color: #e5e5e5;
+}
+
+.dark .plyr-container .plyr__menu__container .plyr__control svg {
+  fill: currentColor;
+  color: #e5e5e5;
+}
+
+.dark .plyr-container .plyr__menu__container .plyr__control:hover {
+  background: #404040;
+}
+
+@media (max-width: 768px) {
+  .plyr-container .plyr--audio .plyr__controls {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .plyr-container .plyr__control[data-plyr="play"] {
+    width: 28px;
+    height: 28px;
+  }
+
+  .plyr-container .plyr__control[data-plyr="play"] svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* 모바일에서 되감기/빨리감기, 설정, 볼륨 컨트롤 숨김 */
+  .plyr-container .plyr__control[data-plyr="rewind"],
+  .plyr-container .plyr__control[data-plyr="fast-forward"],
+  .plyr-container .plyr__control[data-plyr="settings"],
+  .plyr-container .plyr__volume {
+    display: none;
+  }
+
+  /* 재생바 더 넓게 */
+  .plyr-container .plyr__progress__container {
+    flex-grow: 1;
+  }
+
+  /* 시간 표시 작게 */
+  .plyr-container .plyr__time {
+    font-size: 11px;
+    padding: 0 4px;
+  }
+}
+
+/* Custom Scrollbar - Light Mode */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d4 transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #d4d4d4;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: #a3a3a3;
+}
+
+/* Custom Scrollbar - Dark Mode */
+.dark .scrollbar-thin {
+  scrollbar-color: #525252 transparent;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #525252;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: #737373;
+}
+
+/* ========================================
+   Toastr-style Toast Notifications
+   ======================================== */
+
+/* bottom-left 토스트 컨테이너: 새 토스트가 아래에 추가되고 기존 토스트가 위로 밀림 */
+[data-sonner-toaster][data-position="bottom-left"] {
+  flex-direction: column-reverse !important;
+}
+
+/* toastr 스타일 토스트 */
+.toastr-toast {
+  border-radius: 8px !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  min-width: 280px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  padding: 14px 16px !important;
+}
+
+.toastr-toast:hover {
+  opacity: 1 !important;
+}
+
+/* Success 토스트 */
+.toastr-success {
+  background-color: #51A351 !important;
+}
+
+.toastr-success [data-icon] svg {
+  color: #ffffff !important;
+}
+
+/* Warning 토스트 */
+.toastr-warning {
+  background-color: #F89406 !important;
+}
+
+.toastr-warning [data-icon] svg {
+  color: #ffffff !important;
+}
+
+/* 다크 모드 */
+.dark .toastr-success {
+  background-color: #3d8b3d !important;
+}
+
+.dark .toastr-warning {
+  background-color: #d97706 !important;
+}
+
+/* 모바일 반응형 */
+@media (max-width: 480px) {
+  .toastr-toast {
+    min-width: calc(100vw - 32px) !important;
+    padding: 12px 14px !important;
+    font-size: 13px !important;
+  }
+}

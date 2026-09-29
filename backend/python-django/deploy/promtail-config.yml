@@ -1,0 +1,92 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # 외부 Loki 서버 URL (환경변수로 설정)
+  - url: ${LOKI_URL:-http://localhost:3100}/loki/api/v1/push
+    # 인증이 필요한 경우
+    # basic_auth:
+    #   username: ${LOKI_USERNAME}
+    #   password: ${LOKI_PASSWORD}
+    tenant_id: ${LOKI_TENANT_ID:-opennote}
+
+scrape_configs:
+  # Django 전체 로그
+  - job_name: django
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: django
+          app: opennote
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/django/django.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: name
+            message: message
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+  # Django 에러 로그
+  - job_name: django-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: django-error
+          app: opennote
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/django/error.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: name
+            message: message
+            exception_type: exception_type
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+          exception_type:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+  # Django 보안 로그
+  - job_name: django-security
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: django-security
+          app: opennote
+          env: ${ENVIRONMENT:-development}
+          __path__: /var/log/django/security.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: name
+            message: message
+            ip: ip
+            username_attempted: username_attempted
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano

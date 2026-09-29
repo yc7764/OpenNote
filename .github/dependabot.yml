@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Django + Celery 워커 (uv.lock)
+  - package-ecosystem: uv
+    directory: /backend/python-django
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # 의도적 git 커밋 고정(pyproject 참조) — Dependabot이 PyPI판으로 바꾸려다
+      # requires-python 상한 없음과 겹쳐 uv 해석 실패, 잡 전체가 매주 실패로 표시됨
+      - dependency-name: dj-rest-auth
+
+  # sttEdit (NestJS)
+  - package-ecosystem: npm
+    directory: /backend/sttEdit
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # frontend (Next.js) — next 본체 major는 별도 과제라 제외
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions 핀 갱신
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -1,0 +1,39 @@
+{% extends 'emails/_base.html' %}
+{% autoescape on %}
+
+{% block title %}문의 답변 알림 - {{ site_name }}{% endblock %}
+
+{% block heading %}문의에 답변이 등록되었습니다{% endblock %}
+
+{% block content %}
+<p style="margin: 0 0 20px 0;">안녕하세요, <strong>{{ user.email }}</strong>님</p>
+
+<p style="margin: 0 0 20px 0;">고객님께서 문의하신 내용에 답변이 등록되었습니다.</p>
+
+<div style="background-color: #f8f9fa; border-left: 4px solid #2691d9; padding: 15px 20px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0 0 10px 0; font-weight: bold; color: #333;">문의 제목</p>
+    <p style="margin: 0; color: #555;">{{ inquiry.subject }}</p>
+</div>
+
+<div style="background-color: #e8f4fd; border-left: 4px solid #2691d9; padding: 15px 20px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0 0 10px 0; font-weight: bold; color: #333;">답변 내용</p>
+    <div style="margin: 0; color: #555; white-space: pre-wrap;">{{ admin_reply }}</div>
+</div>
+{% endblock %}
+
+{% block button %}
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ site_url }}/contact/history"
+       style="display: inline-block; background-color: #2691d9; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+        문의 내역 확인하기
+    </a>
+</div>
+{% endblock %}
+
+{% block warning %}
+<p style="margin: 30px 0 0 0; font-size: 13px; color: #888;">
+    본 메일은 발신 전용입니다. 추가 문의는 사이트 내 문의하기를 이용해 주세요.
+</p>
+{% endblock %}
+
+{% endautoescape %}

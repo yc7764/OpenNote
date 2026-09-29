@@ -1,0 +1,184 @@
+# 운영 Compose
+#
+# 리소스/로그 정책:
+#   - 로그: json-file 드라이버에 크기·개수 상한(무제한 누적 → 디스크 풀 방지).
+#           앱이 직접 남기는 logs/*.log는 각 서비스가 자체 로테이션한다(별개).
+#   - 메모리: mem_limit은 ${*_MEM_LIMIT} 환경변수로 조정(서버 스펙에 맞게 .env에서).
+#             저장소 기본값은 중립 참조값이며 특정 운영 서버 스펙이 아니다.
+#   - 헬스체크: 의존 서비스(redis-cache) 준비를 기다린 뒤 앱을 띄운다.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # =============================================================================
+  # Redis Cache - Standalone (브루트포스 방지용)
+  # =============================================================================
+  redis-cache:
+    image: redis:7.2-alpine
+    container_name: opennote-redis-cache
+    env_file:
+      - .env
+    # REDIS_PASSWORD가 설정되면 requirepass 강제(운영 정합), 없으면 무인증(내부망 한정).
+    # 비밀번호는 컨테이너 env로만 읽어 compose 리터럴·docker inspect에 남기지 않는다.
+    command: >
+      sh -c 'exec redis-server
+      ${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
+      --maxmemory 64mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no'
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a \"$$REDIS_PASSWORD\"} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: ${REDIS_MEM_LIMIT:-128m}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+  # =============================================================================
+  # Backend - Django REST API Server
+  # =============================================================================
+  backend:
+    build:
+      context: ./backend/python-django
+      dockerfile: Dockerfile
+    container_name: opennote-backend
+    ports:
+      # 기본은 루프백 — Docker의 DNAT는 호스트 방화벽(DOCKER-USER)보다 앞단이라
+      # 0.0.0.0 발행은 방화벽 규칙을 우회해 인터넷에 직결된다.
+      # 게이트웨이(nginx)가 같은 호스트면 이 값 그대로 두면 되고, 다른 호스트면
+      # .env에 BACKEND_BIND=0.0.0.0 을 두고 방화벽에서 게이트웨이 IP만 허용할 것.
+      - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./backend/python-django/logs:/app/logs
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+    healthcheck:
+      # 헬스 엔드포인트가 없으므로 포트 수신(프로세스 기동) 여부로 판정
+      test: ["CMD-SHELL", "python -c \"import socket,sys; s=socket.socket(); s.settimeout(3); sys.exit(0 if s.connect_ex(('127.0.0.1',8000))==0 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    mem_limit: ${BACKEND_MEM_LIMIT:-1g}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+  # =============================================================================
+  # Promtail - Log shipper for Loki
+  # =============================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: opennote-promtail
+    volumes:
+      - ./backend/python-django/logs:/var/log/django:ro
+      - ./backend/python-django/deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml -config.expand-env=true
+    environment:
+      - LOKI_URL=${LOKI_URL:-http://localhost:3100}
+      - LOKI_TENANT_ID=${LOKI_TENANT_ID:-opennote}
+      - ENVIRONMENT=${DJANGO_ENV:-development}
+    depends_on:
+      - backend
+    mem_limit: ${PROMTAIL_MEM_LIMIT:-128m}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+  # =============================================================================
+  # sttEdit - NestJS WebSocket Server
+  # =============================================================================
+  sttedit:
+    build:
+      context: ./backend/sttEdit
+      dockerfile: Dockerfile
+    container_name: opennote-sttedit
+    ports:
+      # 기본은 루프백 — Docker의 DNAT는 호스트 방화벽(DOCKER-USER)보다 앞단이라
+      # 0.0.0.0 발행은 방화벽 규칙을 우회해 인터넷에 직결된다.
+      # 게이트웨이(nginx)가 같은 호스트면 이 값 그대로 두면 되고, 다른 호스트면
+      # .env에 STTEDIT_BIND=0.0.0.0 을 두고 방화벽에서 게이트웨이 IP만 허용할 것.
+      - "${STTEDIT_BIND:-127.0.0.1}:21123:21123"
+    env_file:
+      - .env
+    volumes:
+      - ./backend/sttEdit/logs:/app/logs
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(21123,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: ${STTEDIT_MEM_LIMIT:-1g}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+  # =============================================================================
+  # Promtail for sttEdit - Log shipper for Loki
+  # =============================================================================
+  promtail-sttedit:
+    image: grafana/promtail:2.9.0
+    container_name: opennote-promtail-sttedit
+    volumes:
+      - ./backend/sttEdit/logs:/var/log/sttedit:ro
+      - ./backend/sttEdit/deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml -config.expand-env=true
+    environment:
+      - LOKI_URL=${LOKI_URL:-http://localhost:3100}
+      - LOKI_TENANT_ID=${LOKI_TENANT_ID:-opennote}
+      - ENVIRONMENT=${NODE_ENV:-development}
+    depends_on:
+      - sttedit
+    mem_limit: ${PROMTAIL_MEM_LIMIT:-128m}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+  # =============================================================================
+  # Frontend - Next.js Application
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: opennote-frontend
+    # 호스트 포트를 발행하지 않는다. nginx가 같은 네트워크에서
+    # 컨테이너명(opennote-frontend:3000)으로 접근하므로 외부 노출이 불필요하다.
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - opennote-network
+
+networks:
+  opennote-network:
+    driver: bridge

@@ -1,0 +1,27 @@
+# 환경변수 — 시크릿이 이미지 레이어에 베이킹되는 것을 차단
+# 이 디렉터리를 컨텍스트로 쓰는 빌드 전부에 적용된다:
+#   Dockerfile, celery_workers/Dockerfile.stt, celery_workers/Dockerfile.summary
+**/.env
+**/.env.*
+!**/.env.example
+
+# 사설 CA 인증서 — 런타임에 볼륨으로 마운트됨 (이미지에 넣지 않는다)
+celery_workers/certs
+
+# 사용자 업로드 음성 파일 (USE_S3=False 로컬 테스트 시 생성) — 이미지 레이어에
+# 실사용자 데이터가 박히는 것을 차단(레이어에 들어가면 이후 rm으로도 제거 불가)
+media
+**/media
+
+# 로그·캐시·빌드 잔재
+logs
+**/*.log
+**/__pycache__
+**/*.pyc
+.venv
+.pytest_cache
+.ruff_cache
+
+# IDE
+.idea
+.vscode

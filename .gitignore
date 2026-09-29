@@ -1,0 +1,143 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next/
+out/
+build/
+
+# NestJS
+/node_modules
+/dist
+**/dist/
+# 로그 디렉터리는 내용물만 무시한다. 디렉터리 자체를 무시하면 git이 안으로
+# 내려가지 않아 .gitkeep 예외가 먹지 않고, 새로 클론한 저장소에서 디렉터리가
+# 통째로 사라진다(런타임에 생성되긴 하나 바인드마운트 소유자 문제가 생긴다).
+**/logs/*
+!**/logs/.gitkeep
+.env
+*.log
+.vscode
+.idea
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.development
+.env.production
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+**/media/
+**/staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+**/.cache/
+
+# Vercel
+.vercel/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json 
+
+# Claude local settings
+**/.claude/.serena/
+.serena/
+.claude/
+
+# 루트의 md 파일은 README.md·SECURITY.md만 허용 — 보안 작업 문서(취약점·인프라 정보)의
+# 실수 커밋을 원천 차단
+/*.md
+!/README.md
+!/SECURITY.md
+!/CONTRIBUTING.md
+
+# 사설 CA 인증서 (런타임 볼륨 마운트 전용)
+backend/python-django/celery_workers/certs/
+
+# 브라우저 자동화 산출물 (세션 로그·스크린샷)
+.playwright-mcp/

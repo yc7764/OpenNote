@@ -1,0 +1,191 @@
+# celery_workers/docker-compose.yml
+# Celery Workers - CPU/GPU 선택 가능 (Legacy + Blackwell 자동 분기)
+#
+# 사용법:
+#   GPU 모드:   docker compose --profile gpu up -d --build
+#   CPU 모드:   docker compose --profile cpu up -d --build
+#   Summary만: docker compose up summary-worker celery-beat -d --build
+#
+# CUDA 버전 자동 감지 (권장):
+#   CUDA_VERSION=$(./detect-cuda.sh) docker compose --profile gpu up -d --build
+#   → 호스트 드라이버가 지원하는 최대 CUDA를 읽어 맞는 torch 빌드를 설치한다.
+#     고정값을 쓰면 GPU·드라이버 교체 시 어긋나 STT가 전면 실패할 수 있다.
+#     Dockerfile.stt가 빌드 시점에 torch CUDA > 드라이버 지원 범위면 빌드를 실패시킨다.
+#
+# CUDA 버전 수동 지정 (GPU별 권장):
+#   RTX 5070 Ti (Blackwell): CUDA_VERSION=12.8 docker compose --profile gpu up -d --build
+#   RTX 4090/4080 (Ada):     CUDA_VERSION=12.4 docker compose --profile gpu up -d --build
+#   RTX 3090/3080 (Ampere):  CUDA_VERSION=11.8 docker compose --profile gpu up -d --build
+#
+# 환경변수:
+#   - .env 파일에서 민감 정보 로드
+#   - CUDA_VERSION: 12.8 (기본), 11.8, 12.1, 12.4, 12.9
+#   - PYTORCH_VERSION: 2.5.1 (기본, Legacy 모드에서만 사용)
+
+# 로그: json-file 드라이버에 크기·개수 상한(무제한 누적 → 디스크 풀 방지).
+# 루트·dev compose와 동일한 설정을 이 워커 compose에도 적용한다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ==================== STT Worker (GPU) ====================
+  stt-worker-gpu:
+    build:
+      context: ..
+      dockerfile: celery_workers/Dockerfile.stt
+      args:
+        DEVICE_TYPE: gpu
+        CUDA_VERSION: ${CUDA_VERSION:-12.8}
+        PYTORCH_VERSION: ${PYTORCH_VERSION:-2.5.1}
+    container_name: opennote-stt-worker
+    profiles:
+      - gpu
+    # 인증서 SAN의 DNS 이름으로 접속한다(TLS 검증에 필요).
+    # 실제 주소는 .env의 DB_SERVER_IP로 주입한다 — 저장소에 IP를 남기지 않는다.
+    extra_hosts:
+      - "db.opennote.internal:${DB_SERVER_IP:?DB_SERVER_IP 미설정}"
+    env_file:
+      - .env
+    environment:
+      - CELERY_LOG_DIR=/app/logs
+      - WORKER_TYPE=stt_worker
+      - CUDA_VISIBLE_DEVICES=0
+      - WHISPER_DEVICE=cuda
+    volumes:
+      - ../logs:/app/logs
+      # 사설 CA — PostgreSQL·MinIO·RabbitMQ TLS 검증용
+      - ./certs:/app/certs:ro
+      # 모델 캐시 (Whisper·pyannote, 약 1.6GB) — 볼륨이 없으면 재생성마다 재다운로드
+      - stt-model-cache:/app/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  # ==================== STT Worker (CPU) ====================
+  stt-worker-cpu:
+    build:
+      context: ..
+      dockerfile: celery_workers/Dockerfile.stt
+      args:
+        DEVICE_TYPE: cpu
+        CUDA_VERSION: cpu
+        PYTORCH_VERSION: ${PYTORCH_VERSION:-2.5.1}
+    container_name: opennote-stt-worker
+    profiles:
+      - cpu
+    # 인증서 SAN의 DNS 이름으로 접속한다(TLS 검증에 필요).
+    # 실제 주소는 .env의 DB_SERVER_IP로 주입한다 — 저장소에 IP를 남기지 않는다.
+    extra_hosts:
+      - "db.opennote.internal:${DB_SERVER_IP:?DB_SERVER_IP 미설정}"
+    env_file:
+      - .env
+    environment:
+      - CELERY_LOG_DIR=/app/logs
+      - WORKER_TYPE=stt_worker
+    volumes:
+      - ../logs:/app/logs
+      # 사설 CA — PostgreSQL·MinIO·RabbitMQ TLS 검증용
+      - ./certs:/app/certs:ro
+      # 모델 캐시 (Whisper·pyannote, 약 1.6GB) — 볼륨이 없으면 재생성마다 재다운로드
+      - stt-model-cache:/app/.cache/huggingface
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  # ==================== Summary Worker ====================
+  summary-worker:
+    build:
+      context: ..
+      dockerfile: celery_workers/Dockerfile.summary
+    container_name: opennote-summary-worker
+    # 인증서 SAN의 DNS 이름으로 접속한다(TLS 검증에 필요).
+    # 실제 주소는 .env의 DB_SERVER_IP로 주입한다 — 저장소에 IP를 남기지 않는다.
+    extra_hosts:
+      - "db.opennote.internal:${DB_SERVER_IP:?DB_SERVER_IP 미설정}"
+    env_file:
+      - .env
+    environment:
+      - CELERY_LOG_DIR=/app/logs
+      - WORKER_TYPE=summary_worker
+    volumes:
+      - ../logs:/app/logs
+      # 사설 CA — PostgreSQL·MinIO·RabbitMQ TLS 검증용
+      - ./certs:/app/certs:ro
+    # summary 워커 먹통(hang) 감지 — STT(Dockerfile.stt)와 동일 패턴.
+    # ($$는 compose 보간을 피해 컨테이너의 $HOSTNAME을 셸에 그대로 전달)
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_workers.summary_worker inspect ping -d summary_worker@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  # ==================== Celery Beat ====================
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: celery_workers/Dockerfile.summary
+    container_name: opennote-celery-beat
+    command: celery -A config.celery_app beat --loglevel=${LOG_LEVEL:-info}
+    # 인증서 SAN의 DNS 이름으로 접속한다(TLS 검증에 필요).
+    # 실제 주소는 .env의 DB_SERVER_IP로 주입한다 — 저장소에 IP를 남기지 않는다.
+    extra_hosts:
+      - "db.opennote.internal:${DB_SERVER_IP:?DB_SERVER_IP 미설정}"
+    env_file:
+      - .env
+    environment:
+      - CELERY_LOG_DIR=/app/logs
+      - WORKER_TYPE=beat
+    volumes:
+      - ../logs:/app/logs
+      # 사설 CA — PostgreSQL·MinIO·RabbitMQ TLS 검증용
+      - ./certs:/app/certs:ro
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+  # =============================================================================
+  # Observability - Promtail (Log shipper for Loki)
+  # =============================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: opennote-celery-promtail
+    volumes:
+      - ../logs:/var/log/celery:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml -config.expand-env=true
+    environment:
+      - LOKI_URL=${LOKI_URL:-http://localhost:3100}
+      - LOKI_TENANT_ID=${LOKI_TENANT_ID:-opennote}
+      - ENVIRONMENT=${DJANGO_ENV:-production}
+    depends_on:
+      - summary-worker
+    logging: *default-logging
+    restart: unless-stopped
+    networks:
+      - celery_network
+
+networks:
+  celery_network:
+    driver: bridge
+
+volumes:
+  # STT 모델 캐시 — GPU/CPU 프로파일이 공유 (동일 모델)
+  stt-model-cache:

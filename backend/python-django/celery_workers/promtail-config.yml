@@ -1,0 +1,129 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # 외부 Loki 서버 URL (환경변수로 설정)
+  - url: ${LOKI_URL:-http://localhost:3100}/loki/api/v1/push
+    tenant_id: ${LOKI_TENANT_ID:-opennote}
+
+scrape_configs:
+  # STT Worker 로그
+  - job_name: celery-stt
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: celery-stt
+          app: opennote
+          component: worker
+          worker_type: stt
+          env: ${ENVIRONMENT:-production}
+          __path__: /var/log/celery/stt_worker.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            task_id: task_id
+            task_name: task_name
+            note_id: note_id
+            attempt: attempt
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+          task_name:
+      - timestamp:
+          source: timestamp
+          format: Unix
+
+  # Summary Worker 로그
+  - job_name: celery-summary
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: celery-summary
+          app: opennote
+          component: worker
+          worker_type: summary
+          env: ${ENVIRONMENT:-production}
+          __path__: /var/log/celery/summary_worker.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            task_id: task_id
+            task_name: task_name
+            note_id: note_id
+            attempt: attempt
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+          task_name:
+      - timestamp:
+          source: timestamp
+          format: Unix
+
+  # Beat Scheduler 로그
+  - job_name: celery-beat
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: celery-beat
+          app: opennote
+          component: scheduler
+          env: ${ENVIRONMENT:-production}
+          __path__: /var/log/celery/beat.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+      - timestamp:
+          source: timestamp
+          format: Unix
+
+  # Celery 에러 로그 (통합)
+  - job_name: celery-errors
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: celery-errors
+          app: opennote
+          component: worker
+          severity: error
+          env: ${ENVIRONMENT:-production}
+          __path__: /var/log/celery/celery_errors.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            task_id: task_id
+            task_name: task_name
+            note_id: note_id
+            timestamp: timestamp
+      - labels:
+          level:
+          logger:
+          task_name:
+      - timestamp:
+          source: timestamp
+          format: Unix
