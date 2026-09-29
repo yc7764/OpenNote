@@ -49,7 +49,7 @@ dependencies = [
 [project.optional-dependencies]
 # 백엔드(Django 웹) 전용
 web = [
-    "djangorestframework==3.16.0",
+    "djangorestframework==3.18.1",
     # 5.5.0은 CVE-2024-22513(비활성 사용자 토큰 유효) — 5.5.1이 픽스
     "djangorestframework-simplejwt==5.5.1",
     "django-cors-headers==4.7.0",
