@@ -60,7 +60,7 @@ web = [
     "django-allauth==65.18.0",
     "dj-rest-auth @ git+https://github.com/iMerica/dj-rest-auth.git@c4213c58ad931ea4a27756fd2b38facef1383d38",
     # 2.9.0은 CVE-2026-32597(미지 crit 헤더 수용, High) — 2.12.0이 픽스 (CI trivy 발견)
-    "pyjwt==2.12.0",
+    "pyjwt==2.15.0",
 
     # Security & Crypto
     # 44.0.0은 휠 내장 OpenSSL이 취약 버전(High 다수) → 50.0.0 상향
