@@ -1,4 +1,15 @@
-# 운영 Compose
+# 운영 Compose — CI가 GHCR에 올린 이미지를 받아 실행한다 (서버에서 빌드하지 않음)
+#
+# 사용법:
+#   - .env에 OPENNOTE_TAG(이미지 태그)와 COMPOSE_PROFILES(이 서버의 역할)를 지정한다.
+#       api     : backend + redis-cache + promtail
+#       sttedit : sttedit + promtail-sttedit
+#       gateway : frontend
+#     한 서버에 전부 띄우려면 COMPOSE_PROFILES=api,sttedit,gateway
+#   - 서버마다 다른 구조(인증서 마운트, 호스트 별칭 등)는 같은 폴더의
+#     docker-compose.override.yml에 둔다. compose가 자동으로 합친다(저장소에는 넣지 않음).
+#     예시: deploy/docker-compose.override.example.yml
+#   - 소스에서 직접 빌드해 개발할 때는 docker-compose.dev.yml을 쓴다.
 #
 # 리소스/로그 정책:
 #   - 로그: json-file 드라이버에 크기·개수 상한(무제한 누적 → 디스크 풀 방지).
@@ -6,6 +17,9 @@
 #   - 메모리: mem_limit은 ${*_MEM_LIMIT} 환경변수로 조정(서버 스펙에 맞게 .env에서).
 #             저장소 기본값은 중립 참조값이며 특정 운영 서버 스펙이 아니다.
 #   - 헬스체크: 의존 서비스(redis-cache) 준비를 기다린 뒤 앱을 띄운다.
+
+# 프로젝트 이름을 폴더 이름과 무관하게 고정한다.
+name: opennote
 
 x-logging: &default-logging
   driver: json-file
@@ -18,6 +32,7 @@ services:
   # Redis Cache - Standalone (브루트포스 방지용)
   # =============================================================================
   redis-cache:
+    profiles: [api]
     image: redis:7.2-alpine
     container_name: opennote-redis-cache
     env_file:
@@ -46,9 +61,8 @@ services:
   # Backend - Django REST API Server
   # =============================================================================
   backend:
-    build:
-      context: ./backend/python-django
-      dockerfile: Dockerfile
+    profiles: [api]
+    image: ghcr.io/yc7764/opennote-backend:${OPENNOTE_TAG:?OPENNOTE_TAG를 .env에 지정하세요}
     container_name: opennote-backend
     ports:
       # 기본은 루프백 — Docker의 DNAT는 호스트 방화벽(DOCKER-USER)보다 앞단이라
@@ -80,6 +94,7 @@ services:
   # Promtail - Log shipper for Loki
   # =============================================================================
   promtail:
+    profiles: [api]
     image: grafana/promtail:2.9.0
     container_name: opennote-promtail
     volumes:
@@ -102,9 +117,8 @@ services:
   # sttEdit - NestJS WebSocket Server
   # =============================================================================
   sttedit:
-    build:
-      context: ./backend/sttEdit
-      dockerfile: Dockerfile
+    profiles: [sttedit]
+    image: ghcr.io/yc7764/opennote-sttedit:${OPENNOTE_TAG:?OPENNOTE_TAG를 .env에 지정하세요}
     container_name: opennote-sttedit
     ports:
       # 기본은 루프백 — Docker의 DNAT는 호스트 방화벽(DOCKER-USER)보다 앞단이라
@@ -117,8 +131,11 @@ services:
     volumes:
       - ./backend/sttEdit/logs:/app/logs
     depends_on:
+      # 같은 서버에 redis-cache(api 프로필)가 있을 때만 기다린다. 외부 redis(클러스터)를
+      # 쓰는 서버에서는 required: false라 의존이 무시된다.
       redis-cache:
         condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('net').connect(21123,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
       interval: 15s
@@ -135,6 +152,7 @@ services:
   # Promtail for sttEdit - Log shipper for Loki
   # =============================================================================
   promtail-sttedit:
+    profiles: [sttedit]
     image: grafana/promtail:2.9.0
     container_name: opennote-promtail-sttedit
     volumes:
@@ -157,11 +175,10 @@ services:
   # Frontend - Next.js Application
   # =============================================================================
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    profiles: [gateway]
+    image: ghcr.io/yc7764/opennote-frontend:${OPENNOTE_TAG:?OPENNOTE_TAG를 .env에 지정하세요}
     container_name: opennote-frontend
-    # 호스트 포트를 발행하지 않는다. nginx가 같은 네트워크에서
+    # 호스트 포트를 발행하지 않는다. nginx가 opennote-network에 붙어
     # 컨테이너명(opennote-frontend:3000)으로 접근하므로 외부 노출이 불필요하다.
     env_file:
       - .env
@@ -181,4 +198,7 @@ services:
 
 networks:
   opennote-network:
+    # 이름을 고정해 프로젝트·폴더 이름이 바뀌어도 외부 compose(게이트웨이 nginx 등)가
+    # external 네트워크 opennote-network로 계속 붙을 수 있게 한다.
+    name: opennote-network
     driver: bridge

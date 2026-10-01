@@ -65,8 +65,9 @@ OpenNote-V2/
 │   │   ├── config/                  # Django 설정 (base/local/production/worker)
 │   │   └── celery_workers/          # Celery 워커 (STT + Summary)
 │   └── sttEdit/                     # NestJS WebSocket 서버 (실시간 편집)
-├── docker-compose.yml               # 프로덕션 Compose
-├── docker-compose.dev.yml           # 로컬 개발 Compose
+├── docker-compose.yml               # 운영 Compose (GHCR 이미지, 역할별 profile)
+├── docker-compose.dev.yml           # 로컬 개발 Compose (소스에서 빌드)
+├── deploy/                          # 배포 스크립트·가이드·override 예시
 └── docs/                            # 프로젝트 문서
 ```
 

@@ -141,3 +141,6 @@ backend/python-django/celery_workers/certs/
 
 # 브라우저 자동화 산출물 (세션 로그·스크린샷)
 .playwright-mcp/
+
+# 서버 전용 compose override (인증서 경로·호스트 별칭 등) — 예시는 deploy/ 참조
+docker-compose.override.yml
