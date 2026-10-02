@@ -35,6 +35,9 @@ declare -A ROLE_FILES=(
   [gateway]="docker-compose.yml"
 )
 declare -A ROLE_LOGDIRS=([api]="backend/python-django/logs" [sttedit]="backend/sttEdit/logs" [gateway]="")
+# 로그 폴더 소유자 = 그 컨테이너의 실행 uid (각 Dockerfile의 USER).
+# backend는 appuser(1000), sttEdit은 nestjs(1001)라 서로 다르다. 틀리면 앱이 로그를 쓰지 못한다.
+declare -A ROLE_LOG_UID=([api]=1000 [sttedit]=1001)
 # 다른 서버의 게이트웨이가 붙는 역할은 바인딩 주소를 .env에 반드시 명시하게 한다.
 # (기본값 127.0.0.1이면 원격 게이트웨이가 접속하지 못한다)
 declare -A ROLE_BIND_KEY=([api]="BACKEND_BIND" [sttedit]="STTEDIT_BIND" [gateway]="")
@@ -58,8 +61,9 @@ tag_to_rev() {
 
 env_keys() { grep -oE '^#?[A-Z_][A-Z0-9_]*=' | tr -d '#=' | sort -u; }
 
-# 원격에서 스크립트 실행: 본문은 stdin, 인자는 $1.. 로 전달 (따옴표 지옥 방지)
-remote_sh() { ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 "$TARGET" bash -s -- "$@"; }
+# 원격에서 스크립트 실행: 본문은 stdin, 인자는 $1.. 로 전달 (따옴표 지옥 방지).
+# ssh는 인자를 공백으로 이어 붙여 원격 셸이 다시 쪼개므로, 인자마다 %q로 인용해 넘긴다.
+remote_sh() { ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 "$TARGET" "bash -s -- $(printf '%q ' "$@")"; }
 
 # ---------------------------------------------------------------------------
 [[ $# -ge 2 ]] || usage
@@ -157,17 +161,17 @@ true
 EOF
   log "백업: $DIR/.deploy-backups/$TS/ (최근 ${KEEP_CONFIG_BACKUPS}회분 보관)"
 
-  # 5) 배포할 버전의 compose·promtail 설정 복사, 로그 폴더 준비(컨테이너는 uid 1000)
+  # 5) 배포할 버전의 compose·promtail 설정 복사, 로그 폴더 준비(소유자 = 컨테이너 실행 uid)
   local f
   for f in ${ROLE_FILES[$ROLE]}; do
     git show "$REV:$f" | ssh -i "$KEY" -o BatchMode=yes "$TARGET" \
       "mkdir -p \"\$(dirname '$DIR/$f')\" && cat > '$DIR/$f'"
   done
   if [[ -n "${ROLE_LOGDIRS[$ROLE]}" ]]; then
-    remote_sh "$DIR" "${ROLE_LOGDIRS[$ROLE]}" <<'EOF'
+    remote_sh "$DIR" "${ROLE_LOGDIRS[$ROLE]}" "${ROLE_LOG_UID[$ROLE]}" <<'EOF'
 set -e
 cd "$1"; mkdir -p "$2"
-[ "$(stat -c %u "$2")" = 1000 ] || sudo -n chown 1000:1000 "$2"
+[ "$(stat -c %u "$2")" = "$3" ] || sudo -n chown "$3:$3" "$2"
 EOF
   fi
 
