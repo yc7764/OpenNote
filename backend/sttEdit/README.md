@@ -75,13 +75,18 @@ npm run start:prod
 
 ### Docker 실행
 
-```bash
-# 빌드 및 실행
-docker compose up --build -d
+sttEdit 전용 compose는 없다. 저장소 루트의 compose를 쓴다.
 
-# 로그 확인
-docker compose logs -f
+```bash
+# 로컬 개발 (소스에서 빌드): 저장소 루트에서
+docker compose -f docker-compose.dev.yml up -d --build sttedit
+
+# 운영 (GHCR 이미지): .env에 OPENNOTE_TAG와 COMPOSE_PROFILES=sttedit 지정 후
+docker compose up -d
+docker compose logs -f sttedit
 ```
+
+운영 배포 절차는 [deploy/README.md](../../deploy/README.md)를 참고한다.
 
 ---
 
@@ -370,8 +375,7 @@ sttEdit/
 │       └── dto/
 │           └── update-note.dto.ts        # DTO 및 XSS Sanitizer
 │
-├── Dockerfile                            # Docker 빌드 설정
-├── docker-compose.yml                    # Docker Compose 설정
+├── Dockerfile                            # Docker 빌드 설정 (compose는 저장소 루트)
 └── package.json
 ```
 

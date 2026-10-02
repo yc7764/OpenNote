@@ -1,0 +1,24 @@
+# 서버 전용 override 예시
+#
+# 서버의 배포 폴더에 docker-compose.override.yml 이름으로 두면 compose가 자동으로
+# docker-compose.yml과 합친다. 실제 파일은 저장소에 넣지 않는다(.gitignore 처리).
+#
+# 원칙: 값(주소·메모리·포트 바인딩·TLS 모드)은 .env에 두고, 여기에는 환경변수로
+# 표현할 수 없는 구조(파일 마운트, 호스트 별칭)만 둔다. 이 서버의 COMPOSE_PROFILES에
+# 없는 서비스는 적지 않는다.
+
+services:
+  # api 프로필 서버 — DB·브로커 TLS 검증용 인증서와 호스트 별칭
+  backend:
+    volumes:
+      - ./certs:/app/certs:ro
+    extra_hosts:
+      # verify-full은 인증서의 호스트명으로 접속해야 하므로 별칭을 실제 주소에 연결한다
+      - "db.opennote.internal:${DB_SERVER_IP}"
+
+  # sttedit 프로필 서버 — 위와 같은 이유
+  # sttedit:
+  #   volumes:
+  #     - ./certs:/app/certs:ro
+  #   extra_hosts:
+  #     - "db.opennote.internal:${DB_SERVER_IP}"
