@@ -24,6 +24,9 @@ set -euo pipefail
 REGISTRY=ghcr.io/yc7764
 HOSTS_FILE=${OPENNOTE_DEPLOY_HOSTS:-$HOME/.config/opennote/deploy-hosts}
 ORDER=(sttedit api gateway)
+# 서버에 남기는 백업 개수 — 설정 백업에는 시크릿이 든 .env 사본이 들어 있어 무한히 쌓지 않는다
+KEEP_DB_BACKUPS=5
+KEEP_CONFIG_BACKUPS=10
 
 declare -A ROLE_SERVICES=([api]="backend" [sttedit]="sttedit" [gateway]="frontend")
 declare -A ROLE_FILES=(
@@ -142,15 +145,17 @@ EOF
   if $CHECK_ONLY; then log "사전 점검 통과 (--check: 변경 없음)"; return; fi
 
   # 4) 백업 — 이번 배포 직전의 .env·compose·override
-  remote_sh "$DIR" "$TS" <<'EOF'
+  remote_sh "$DIR" "$TS" "$KEEP_CONFIG_BACKUPS" <<'EOF'
 set -e
-cd "$1"; mkdir -p ".deploy-backups/$2"
+cd "$1"; mkdir -p ".deploy-backups/$2"; chmod 700 .deploy-backups
 for f in .env docker-compose.yml docker-compose.override.yml; do
   [ -f "$f" ] && cp -p "$f" ".deploy-backups/$2/"
 done
+# 최근 N회분만 남긴다 (폴더 이름이 시각이라 이름순 = 시간순)
+ls -1d .deploy-backups/*/ | sort | head -n -"$3" | xargs -r rm -rf
 true
 EOF
-  log "백업: $DIR/.deploy-backups/$TS/"
+  log "백업: $DIR/.deploy-backups/$TS/ (최근 ${KEEP_CONFIG_BACKUPS}회분 보관)"
 
   # 5) 배포할 버전의 compose·promtail 설정 복사, 로그 폴더 준비(컨테이너는 uid 1000)
   local f
@@ -187,9 +192,9 @@ $plan"
       warn "적용할 마이그레이션이 있습니다:"
       sed 's/^/    /' <<<"$plan"
       log "DB 백업 중 (pg_dump)"
-      remote_sh "$DIR" "$TAG" "$TS" <<'EOF'
+      remote_sh "$DIR" "$TAG" "$TS" "$KEEP_DB_BACKUPS" <<'EOF'
 set -e
-cd "$1"; mkdir -p backups
+cd "$1"; mkdir -p backups; chmod 700 backups
 DBIP=$(grep -E '^DB_SERVER_IP=' .env | tail -1 | cut -d= -f2-)
 docker run --rm --env-file .env ${DBIP:+--add-host "db.opennote.internal:$DBIP"} \
   -v "$PWD/certs:/app/certs:ro" -v "$PWD/backups:/backups" postgres:16-alpine \
@@ -197,6 +202,8 @@ docker run --rm --env-file .env ${DBIP:+--add-host "db.opennote.internal:$DBIP"}
          [ -n "$DB_SSL_ROOT_CERT" ] && conn="$conn sslrootcert=$DB_SSL_ROOT_CERT"
          PGPASSWORD="$DB_PASSWORD" pg_dump -Fc -f "/backups/pre-'"$2"'-'"$3"'.dump" "$conn"'
 ls -lh "backups/pre-$2-$3.dump"
+# 최근 N개만 남긴다 (파일 이름의 시각 기준)
+ls -1t backups/pre-*.dump | tail -n +"$(( $4 + 1 ))" | xargs -r rm -f
 EOF
       confirm "위 마이그레이션을 운영 DB에 적용할까요?" \
         || die "마이그레이션을 적용하지 않았습니다. 서버의 실행 중 버전과 .env는 바뀌지 않았습니다"

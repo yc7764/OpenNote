@@ -131,7 +131,7 @@ services:
     volumes:
       - ./backend/sttEdit/logs:/app/logs
     depends_on:
-      # 같은 서버에 redis-cache(api 프로필)가 있을 때만 기다린다. 외부 redis(클러스터)를
+      # 같은 서버에 redis-cache(api 프로필)가 있을 때만 기다린다. 외부 redis를
       # 쓰는 서버에서는 required: false라 의존이 무시된다.
       redis-cache:
         condition: service_healthy

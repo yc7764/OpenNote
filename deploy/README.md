@@ -88,7 +88,7 @@ deploy/deploy.sh api v1.005                # 한 역할만
 1. 태그 이미지가 GHCR에 있는지 확인
 2. 서버 `.env` 점검 — 역할, `*_BIND` 명시 여부
 3. 이전 버전 대비 `.env.example`에 새로 생긴 키 안내, 워커가 쓰는 모델 변경 경고
-4. 서버의 `.env`·compose·override를 `.deploy-backups/<시각>/`에 백업
+4. 서버의 `.env`·compose·override를 `.deploy-backups/<시각>/`에 백업 (최근 10회분 보관)
 5. 배포할 버전의 compose·promtail 설정 복사, 새 이미지 pull
 6. (api) 마이그레이션 확인 — 아래 참고
 7. `.env`의 `OPENNOTE_TAG` 교체 후 `docker compose up -d`, 헬스체크 대기(최대 3분)
@@ -96,7 +96,7 @@ deploy/deploy.sh api v1.005                # 한 역할만
 ## 마이그레이션
 
 - 적용할 마이그레이션이 **없으면** 그대로 진행한다(대부분의 배포).
-- **있으면** 목록을 보여주고, `pg_dump`로 서버의 `backups/`에 DB를 백업한 뒤, `y`를 입력해야 적용한다. `N`이면 실행 중인 버전과 `.env`는 바뀌지 않는다.
+- **있으면** 목록을 보여주고, `pg_dump`로 서버의 `backups/`에 DB를 백업(최근 5개 보관)한 뒤, `y`를 입력해야 적용한다. `N`이면 실행 중인 버전과 `.env`는 바뀌지 않는다.
 - 이미지를 되돌려도 DB 스키마는 되돌아가지 않는다. 그래서 마이그레이션은 **이전 버전 코드도 새 스키마에서 동작하도록** 작성한다. 예: 컬럼 삭제는 "코드에서 사용 중단 → 다음 릴리스에서 삭제"로 나눈다.
 
 ## 되돌리기
@@ -110,14 +110,3 @@ deploy/deploy.sh <역할> <이전 태그>
 ## Celery 워커
 
 자동 배포 대상이 아니다. 워커 장비에서 `backend/python-django/celery_workers/docker-compose.yml`로 직접 빌드·실행한다. 워커는 Django 모델을 직접 쓰므로, `deploy.sh`가 notes·notifications 모델 변경을 경고하면 워커도 같은 버전으로 재배포한다.
-
-## 소스 기반 배포에서 전환할 때
-
-기존에 서버에서 `git pull` 후 빌드하던 경우의 1회성 절차.
-
-1. 새 배포 폴더를 만들고 기존 `.env`·인증서를 옮긴다. 기존 compose에서 직접 고친 부분은 override로 옮긴다.
-2. `.env`에 `OPENNOTE_TAG`, `COMPOSE_PROFILES`, 필요한 `*_BIND`를 추가한다.
-3. `deploy.sh <역할> <태그> --check`로 점검한다.
-4. 새 이미지를 미리 받아 둔 뒤(`OPENNOTE_TAG=<태그> docker compose pull`) 기존 컨테이너를 내리고 `deploy.sh`로 올린다. 컨테이너 이름이 같아서 기존 것을 먼저 내려야 한다.
-5. 다른 compose가 앱 네트워크에 붙어 있었다면 external 네트워크 이름을 `opennote-network`로 바꾼다.
-6. 정상 확인 후 서버의 소스 폴더와 GitHub 자격증명을 지운다.
