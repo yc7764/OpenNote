@@ -35,10 +35,12 @@ services:
     profiles: [api]
     image: redis:7.2-alpine
     container_name: opennote-redis-cache
-    env_file:
-      - .env
+    # .env 전체(env_file)를 넘기지 않고 쓰는 값만 넘긴다. 통째로 넘기면 OPENNOTE_TAG처럼
+    # redis와 무관한 값이 바뀔 때도 설정이 달라진 것으로 보여 배포마다 재생성(캐시 초기화)된다.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     # REDIS_PASSWORD가 설정되면 requirepass 강제(운영 정합), 없으면 무인증(내부망 한정).
-    # 비밀번호는 컨테이너 env로만 읽어 compose 리터럴·docker inspect에 남기지 않는다.
+    # 비밀번호는 컨테이너 env로만 읽어 command 리터럴에 남기지 않는다.
     command: >
       sh -c 'exec redis-server
       ${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
