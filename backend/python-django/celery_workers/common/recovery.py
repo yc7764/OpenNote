@@ -284,11 +284,12 @@ def process_dlq():
     try:
         app = _get_celery_app()
 
-        # RabbitMQ DLQ에서 메시지 가져오기
-        from kombu import Connection
+        # RabbitMQ DLQ에서 메시지 가져오기.
+        # ack/nack를 하므로 write 연결. 앱 경유라 broker_use_ssl(사설 CA)이 적용된다 —
+        # raw kombu.Connection은 이를 읽지 않아 amqps에서 인증서 검증에 실패했다.
         import json
 
-        with Connection(app.conf.broker_url) as conn:
+        with app.connection_for_write() as conn:
             channel = conn.channel()
 
             # DLQ에서 메시지 가져오기 (최대 10개)

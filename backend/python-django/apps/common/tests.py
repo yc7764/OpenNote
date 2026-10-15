@@ -4,6 +4,7 @@ common 앱 테스트
 클라이언트 IP 판별 보안 테스트 (X-Forwarded-For 위조 방어 검증)
 """
 import ssl
+from pathlib import Path
 
 from django.test import RequestFactory, SimpleTestCase
 from rest_framework.settings import api_settings
@@ -302,3 +303,102 @@ class MetricsAccessTest(SimpleTestCase):
             self.assertEqual(self._get('11.1.2.3').status_code, 403)
         finally:
             metrics._ALLOWED_NETWORKS = original
+
+
+class BrokerConnectionTlsTest(SimpleTestCase):
+    """
+    워커가 브로커(RabbitMQ)를 직접 조회할 때는 Celery 앱의 connection_for_*()를
+    거쳐야 CELERY_BROKER_USE_SSL(사설 CA)이 전달된다. raw kombu.Connection(broker_url)은
+    그 옵션을 읽지 않아 amqps에서 CERTIFICATE_VERIFY_FAILED로 실패했다 — heartbeat 큐 깊이가
+    항상 0으로 기록되고 process_dlq가 매번 실패했다. (2026-10-15 실제 발생)
+
+    summary_worker는 import 시 LLM 키를 요구하고 gpu/heartbeat는 torch가 필요해
+    여기서는 import 대신 소스 파일을 읽어 검사한다.
+    """
+
+    WORKERS_DIR = Path(__file__).resolve().parents[2] / 'celery_workers'
+
+    def _source(self, relative):
+        return (self.WORKERS_DIR / relative).read_text(encoding='utf-8')
+
+    def test_raw_kombu_Connection을_쓰지_않는다(self):
+        for relative in ('gpu/heartbeat.py', 'summary_worker.py', 'common/recovery.py'):
+            src = self._source(relative)
+            self.assertNotIn(
+                'Connection(app.conf.broker_url)', src,
+                f'{relative}: raw kombu.Connection은 broker_use_ssl(CA)을 전달하지 않는다',
+            )
+            self.assertNotIn('from kombu import Connection', src, relative)
+
+    def test_큐_깊이는_공용_헬퍼를_쓴다(self):
+        for relative in ('gpu/heartbeat.py', 'summary_worker.py'):
+            self.assertIn('get_queue_depth(', self._source(relative), relative)
+        self.assertIn('connection_for_write()', self._source('common/recovery.py'))
+
+    def test_get_queue_depth는_앱_연결과_passive_선언을_쓴다(self):
+        from unittest.mock import MagicMock
+        from celery_workers.common.broker import get_queue_depth
+
+        app = MagicMock()
+        conn = app.connection_for_read.return_value.__enter__.return_value
+        channel = conn.channel.return_value.__enter__.return_value
+        channel.queue_declare.return_value.message_count = 7
+
+        self.assertEqual(get_queue_depth(app, 'stt_queue'), 7)
+        app.connection_for_read.assert_called_once_with()
+        # passive=True: 큐를 새로 만들지 않고 존재하는 큐만 조회한다
+        channel.queue_declare.assert_called_once_with(queue='stt_queue', passive=True)
+
+
+class LlmProviderModelTest(SimpleTestCase):
+    """
+    Groq는 llama-3.3-70b-versatile·llama-3.1-8b-instant를 2026-08-16에 종료했다.
+    폐기 모델이 기본값에 남아 있으면 요약마다 404 헛호출 뒤 폴백만 반복된다.
+    """
+
+    RETIRED_GROQ_MODELS = {'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'}
+
+    def setUp(self):
+        from celery_workers.common.providers import reset_fallback_manager
+        reset_fallback_manager()
+
+    def test_기본_Groq_모델이_폐기_모델이_아니다(self):
+        from celery_workers.common.providers import FallbackManager
+        from celery_workers.common.providers.config import LLMConfig
+
+        groq = [p for p in FallbackManager().providers if p.name.startswith('Groq')]
+        self.assertEqual(len(groq), 2, '품질 우선 + 안전망 두 개여야 한다')
+        for provider in groq:
+            self.assertNotIn(provider.model, self.RETIRED_GROQ_MODELS)
+        self.assertEqual(groq[0].model, LLMConfig.GROQ_MODEL)
+        self.assertEqual(groq[1].model, LLMConfig.GROQ_FALLBACK_MODEL)
+
+    def test_404을_돌려준_프로바이더는_이후_호출에서_건너뛴다(self):
+        from celery_workers.common.providers import FallbackManager, ProviderResult, SummaryProvider
+
+        class Fake(SummaryProvider):
+            def __init__(self, label, result):
+                self.label, self.result, self.calls = label, result, 0
+
+            @property
+            def name(self):
+                return self.label
+
+            @property
+            def is_available(self):
+                return True
+
+            def call(self, content, user_description=None, user_keywords=None):
+                self.calls += 1
+                return self.result
+
+        gone = Fake('gone', ProviderResult(
+            success=False, error_code=404, error_message='model_not_found', provider_name='gone',
+        ))
+        ok = Fake('ok', ProviderResult(success=True, content='요약', provider_name='ok'))
+        manager = FallbackManager(providers=[gone, ok])
+
+        self.assertTrue(manager.call_with_fallback({}).success)
+        self.assertTrue(manager.call_with_fallback({}).success)
+        self.assertEqual(gone.calls, 1, '404 이후에는 다시 호출하지 않아야 한다')
+        self.assertEqual(ok.calls, 2)

@@ -16,10 +16,10 @@ from .config import LLMConfig
 class GeminiProvider(SummaryProvider):
     """Google Gemini API 프로바이더"""
 
-    def __init__(self, model: str = "gemini-3-flash-preview"):
+    def __init__(self, model: str = LLMConfig.GEMINI_MODEL):
         """
         Args:
-            model: 사용할 모델명
+            model: 사용할 모델명 (기본값은 LLMConfig.GEMINI_MODEL, 환경변수 LLM_GEMINI_MODEL)
                 - gemini-3-flash-preview: 최신 버전, 품질 우수 (기본값)
                 - gemini-2.5-flash: 안정 버전
                 - gemini-2.5-flash-lite: 높은 할당량 (1,000 RPD)

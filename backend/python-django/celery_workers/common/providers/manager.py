@@ -46,17 +46,20 @@ class FallbackManager:
             retry_on_rate_limit: RPM 제한 시 재시도 여부
         """
         if providers is None:
-            # 기본 폴백 순서: 품질 우선
+            # 기본 폴백 순서: 품질 우선. 모델명은 LLMConfig(환경변수)에서 온다.
             providers = [
-                GroqProvider(model="llama-3.3-70b-versatile"),
-                GeminiProvider(model="gemini-3-flash-preview"),
-                MistralProvider(model="mistral-large-latest"),
-                GroqProvider(model="llama-3.1-8b-instant"),
+                GroqProvider(model=LLMConfig.GROQ_MODEL),
+                GeminiProvider(model=LLMConfig.GEMINI_MODEL),
+                MistralProvider(model=LLMConfig.MISTRAL_MODEL),
+                GroqProvider(model=LLMConfig.GROQ_FALLBACK_MODEL),
             ]
         self.providers = providers
         self.max_retries_per_provider = max_retries_per_provider
         self.retry_on_rate_limit = retry_on_rate_limit
         self._rate_limiter = get_rate_limit_manager()
+        # 404(모델 없음)를 돌려준 프로바이더. 설정을 바꾸지 않는 한 같은 결과라
+        # 프로세스가 살아 있는 동안 건너뛴다 (워커 자식 교체 시 자연히 초기화).
+        self._disabled: set = set()
 
     def call_with_fallback(
         self,
@@ -84,6 +87,11 @@ class FallbackManager:
         for provider in self.providers:
             if not provider.is_available:
                 logger.debug(f"[Fallback] {provider.name}: API key not configured, skipping")
+                continue
+
+            if provider.name in self._disabled:
+                logger.debug(f"[Fallback] {provider.name}: disabled after model-not-found, skipping")
+                errors.append((provider.name, 404, "Model not found (disabled)"))
                 continue
 
             # Rate limit 상태 확인
@@ -164,10 +172,18 @@ class FallbackManager:
 
                 # Rate limit이 아니면 재시도 없이 실패 반환
                 if not result.is_rate_limited:
-                    logger.warning(
-                        f"[Fallback] {provider.name} failed: "
-                        f"{result.error_code} - {result.error_message}"
-                    )
+                    if result.error_code == 404:
+                        # 모델 폐기·오타 등 설정 문제. 요약마다 헛호출하지 않도록 비활성화.
+                        self._disabled.add(provider.name)
+                        logger.error(
+                            f"[Fallback] {provider.name} model not found (404) — "
+                            f"disabled for this process: {result.error_message}"
+                        )
+                    else:
+                        logger.warning(
+                            f"[Fallback] {provider.name} failed: "
+                            f"{result.error_code} - {result.error_message}"
+                        )
                     return result
 
                 # Rate limit 발생
