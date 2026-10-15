@@ -1,10 +1,10 @@
 """
 Summary API 프로바이더 모듈
 
-폴백 체인을 통한 다중 LLM API 지원
-- Groq (Llama 3.3 70B, Llama 3.1 8B)
-- Gemini (2.0 Flash)
-- Mistral (Large Latest)
+폴백 체인을 통한 다중 LLM API 지원 (모델명은 config.LLMConfig, 환경변수 LLM_*_MODEL)
+- Groq (openai/gpt-oss-120b 품질 우선, openai/gpt-oss-20b 안전망)
+- Gemini (gemini-3-flash-preview)
+- Mistral (mistral-large-latest)
 
 Rate limit 인식 및 지능적 폴백:
 - Exponential backoff with jitter

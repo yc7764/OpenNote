@@ -48,13 +48,9 @@ def send_worker_heartbeat():
         queue_depth = 0
 
         try:
-            from kombu import Connection
-            broker_url = app.conf.broker_url
-
-            with Connection(broker_url) as conn:
-                channel = conn.channel()
-                queue = channel.queue_declare(queue=queue_name, passive=True)
-                queue_depth = queue.message_count
+            # 앱 경유 연결 — broker_use_ssl(사설 CA)을 함께 쓴다
+            from celery_workers.common.broker import get_queue_depth
+            queue_depth = get_queue_depth(app, queue_name)
         except Exception as e:
             logger.warning(f"Failed to get queue depth: {e}")
 

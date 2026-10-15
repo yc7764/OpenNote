@@ -18,10 +18,10 @@ class MistralProvider(SummaryProvider):
 
     API_URL = "https://api.mistral.ai/v1/chat/completions"
 
-    def __init__(self, model: str = "mistral-large-latest"):
+    def __init__(self, model: str = LLMConfig.MISTRAL_MODEL):
         """
         Args:
-            model: 사용할 모델명
+            model: 사용할 모델명 (기본값은 LLMConfig.MISTRAL_MODEL, 환경변수 LLM_MISTRAL_MODEL)
                 - mistral-large-latest: 무료 티어 최고 품질 (기본값)
                 - mistral-medium-latest: 중간 성능
                 - mistral-small-latest: 가성비 우수

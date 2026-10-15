@@ -63,11 +63,12 @@ def cleanup_local_file(file_path):
 def call_summary_api(content, user_description=None, user_keywords=None):
     """폴백 체인을 통한 요약 API 호출
 
-    여러 LLM API를 순차적으로 시도하여 안정성 확보:
-    1. Groq Llama 3.3 70B (품질 우선)
-    2. Gemini 1.5 Flash (한국어 우수)
-    3. Mistral Small (기존 검증됨)
-    4. Groq Llama 3.1 8B (최종 안전망)
+    여러 LLM API를 순차적으로 시도하여 안정성 확보 (기본 순서, 모델명은
+    celery_workers.common.providers.config.LLMConfig에서 환경변수로 바꿀 수 있다):
+    1. Groq gpt-oss-120b (품질 우선)
+    2. Gemini 3 Flash Preview (한국어 우수)
+    3. Mistral Large (기존 검증됨)
+    4. Groq gpt-oss-20b (최종 안전망)
 
     Args:
         content: STT 결과 데이터

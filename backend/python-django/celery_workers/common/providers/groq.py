@@ -1,7 +1,9 @@
 """
 Groq API 프로바이더
 
-Llama 3.3 70B (품질 우선) 및 Llama 3.1 8B (안전망) 지원
+기본 모델은 LLMConfig.GROQ_MODEL(품질 우선)·GROQ_FALLBACK_MODEL(안전망).
+Groq는 모델을 주기적으로 폐기하므로(llama-3.3-70b-versatile·llama-3.1-8b-instant는
+2026-08-16 종료) 모델명은 환경변수 LLM_GROQ_MODEL / LLM_GROQ_FALLBACK_MODEL로 바꾼다.
 """
 import os
 from typing import Optional, List
@@ -12,14 +14,14 @@ from .rate_limiter import parse_retry_after
 
 
 class GroqProvider(SummaryProvider):
-    """Groq API를 통한 Llama 모델 프로바이더"""
+    """Groq API 프로바이더 (OpenAI 호환 chat.completions)"""
 
-    def __init__(self, model: str = "llama-3.3-70b-versatile"):
+    def __init__(self, model: str = LLMConfig.GROQ_MODEL):
         """
         Args:
-            model: 사용할 모델명
-                - llama-3.3-70b-versatile: 품질 우선 (RPD 1,000)
-                - llama-3.1-8b-instant: 안전망 (RPD 14,400)
+            model: 사용할 모델명 (Groq 모델 ID)
+                - openai/gpt-oss-120b: 품질 우선 (기본값, Developer 플랜 30 RPM / 1K RPD)
+                - openai/gpt-oss-20b: 안전망 (기본 폴백)
         """
         self.model = model
         self._client = None
@@ -103,16 +105,24 @@ class GroqProvider(SummaryProvider):
             # 기타 API 에러 (429 포함)
             is_rate_limited = e.status_code == 429
             retry_after = None
+            error_message = str(e)
 
             if is_rate_limited and hasattr(e, 'response') and e.response is not None:
                 retry_after = parse_retry_after(
                     e.response.headers.get('Retry-After')
                 )
 
+            if e.status_code == 404:
+                # 모델 폐기(deprecation) 또는 모델명 오타. 설정 변경 없이는 반복되므로 힌트를 남긴다.
+                error_message = (
+                    f"{error_message} | 모델 '{self.model}'을(를) Groq에서 찾을 수 없음 — "
+                    f"폐기됐을 수 있음. LLM_GROQ_MODEL / LLM_GROQ_FALLBACK_MODEL 환경변수로 교체"
+                )
+
             return ProviderResult(
                 success=False,
                 error_code=e.status_code,
-                error_message=str(e),
+                error_message=error_message,
                 provider_name=self.name,
                 is_rate_limited=is_rate_limited,
                 retry_after=retry_after
